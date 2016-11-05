@@ -22,7 +22,7 @@
 ##################################################################################
 #                    ARE_case1234.R
 ##################################################################################
-# Computation of the Asymptotic relative Efficiency (ARE) values for censoring
+# Computation of the Asymptotic Relative Efficiency (ARE) values for censoring
 # cases 1,2,3 and 4, for several copulas and Weibull distributions.
 #
 ################################################################################## 
