@@ -1,0 +1,674 @@
+
+##################################################################################
+#                    ARE_case1234.R
+##################################################################################
+# Computation of the Asymptotic relative Efficiency (ARE) values for censoring
+# cases 1,2,3 and 4, for several copulas and Weibull distributions.
+#
+################################################################################## 
+#
+# CASE 1: The composite endpoint does not include a fatal event (i.e. Death) 
+# neither in the Relevant endpoint nor in the Additional endpoint.
+#
+# CASE 2: The composite endpoint does not include a fatal event 
+# in the Relevant endpoint but it does in the Additional endpoint.
+#
+# CASE 3: The composite endpoint does include a fatal event 
+# in the Relevant endpoint but it does not in the Additional endpoint.
+#
+# CASE 4: The composite endpoint does include a fatal event 
+# both in the Relevant endpoint and in the Additional endpoint.
+#
+# Last update: 5/11/2016
+#
+# R version: R 3.3.1
+#
+# Authors: Moisés Gómez Mateu (moises.gomez.mateu@upc.edu)
+#          Oleguer Plana Ripoll (oleguerplana@gmail.com)
+#
+################################################################################## 
+#
+# References:
+#   - [1] Gómez G. and Lagakos S.W. (2013). Statistical considerations when using a composite 
+#     endpoint for comparing treatment groups. Statistics in Medicine, 32, 719-38.
+#   - [2] Gómez G. and Lagakos S. (2013). Web-based Supporting Materials for "Statistical 
+#     Considerations when Using a Composite Endpoint for Comparing Treatment Groups"
+#     by G. Gómez and S.W. Lagakos.
+#   - [3] Gómez G. and Gómez-Mateu M (2014). The Asymptotic Relative Efficiency and the ratio
+#     of sample sizes when testing two different null hypotheses. SORT. 38, 73-88.
+#
+##################################################################################
+
+if ("copula" %in% rownames(installed.packages()) == FALSE) { install.packages("copula") }
+library(copula)
+
+if ("numDeriv" %in% rownames(installed.packages()) == FALSE) { install.packages("numDeriv") }
+library(numDeriv)
+
+if ("rootSolve" %in% rownames(installed.packages()) == FALSE) { install.packages("rootSolve") }
+library('rootSolve')
+
+
+#######################################################################################
+# Function: ARE 
+#
+#######################################################################################
+# Description: It computes the ARE value for the given arguments
+# 
+# rho0	  Spearman's coefficient between T1 and T2 in control group
+# rho1	  Spearman's coefficient between T1 and T2 in treatment group
+# beta1	  Shape parameter for a Weibull law for the relevant event
+# beta2   Shape parameter for a Weibull law for the additional event 
+# HR1     Hazard Ratio for a Weibull law for the relevant event
+# HR2     Hazard Ratio for a Weibull law for the additional event
+# p1      Proportion of Relevant events in control group
+# p2      Proportion of Additional events in control group
+# case    Censoring case -- > 1 (default), 2, 3 or 4
+# copula  Copula used:
+#            Archimedean: "Frank" (default), "Gumbel" or "Clayton"
+#            Elliptical: "Normal" or "T"
+#            Extreme Value: "Galambos", "HuslerReiss", "Gumbel", "Tawn" or "Tev"
+#            Others: "FGM" or "Plackett"
+#######################################################################################
+
+ARE<-function(rho0,rho1=rho0, beta1, beta2, HR1, HR2, p1, p2, case = 1, copula="Frank")
+{ 
+############################################################
+###### 0. WARNINGS AND ERRORS
+if(rho0>1 | rho0<(-1)) { 
+stop("correlation rho must be a number between -1 and 1",call.=FALSE)
+}
+
+if(p1<0 | p2<0| p1>1 | p2>1) { 
+stop("probabilities p1 and p2 must be between 0 and 1.",call.=FALSE)
+}
+
+case_check<-0
+if(case==1|case==2|case==3|case==4) {case_check=1}
+if(case_check==0){stop("Please, introduce a valid Case value: 1,2,3 or 4.",call.=FALSE)}
+
+# Note: Warning for copula validation already implemented. See CopulaSelection function.
+############################################################
+
+
+
+
+############################################################ 
+###### 1. SELECTION OF THE COPULA
+copula0<-CopulaSelection(copula,rho0)
+theta<-copula0[[2]]   
+which.copula0<-copula0[[1]]
+which.copula1<-CopulaSelection(copula,rho1)[[1]]  
+############################################################
+
+############################################################
+###### 2. SELECTION OF THE MARGINAL DISTRIBUTIONS
+MarginSelec<-MarginalsSelection(beta1,beta2,HR1,HR2,p1,p2,case,theta)
+T1dist<-MarginSelec[[1]]
+T2dist<-MarginSelec[[2]]
+T1pdist<-MarginSelec[[3]]
+T2pdist<-MarginSelec[[4]]
+T10param<-MarginSelec[[5]]
+T20param<-MarginSelec[[6]]
+T11param<-MarginSelec[[7]]
+T21param<-MarginSelec[[8]]
+############################################################
+
+############################################################
+###### 3. ARE EXPRESSION FOLLOWING GÓMEZ AND LAGAKOS (See reference [2], pages 2 and 3).
+
+# Bivariate distribution in control and treatment groups
+distribution0 <- mvdc(copula = which.copula0, margins = c(T1dist, T2dist),paramMargins = list(T10param, T20param))
+distribution1 <- mvdc(copula = which.copula1, margins = c(T1dist, T2dist),paramMargins = list(T11param, T21param))
+
+if(case==1|case==3) {
+
+# Inside the integral in the numerator (See reference [2], page 2).
+inside_integral <- function(t) {
+Sstar0<-Sstar(x=t,dist1=T1pdist,dist2=T2pdist,param1=T10param,param2=T20param,dist_biv= distribution0) 
+Sstar1<-Sstar(x=t,dist1=T1pdist,dist2=T2pdist,param1=T11param,param2=T21param,dist_biv= distribution1)   
+fstar0<-(-grad(Sstar,x=t,dist1=T1pdist,dist2=T2pdist,param1=T10param,param2=T20param,dist_biv= distribution0))
+fstar1<-(-grad(Sstar,x=t,dist1=T1pdist,dist2=T2pdist,param1=T11param,param2=T21param,dist_biv= distribution1))    
+Lstar0 <- (fstar0/Sstar0)     
+Lstar1 <- (fstar1/Sstar1)                                                             
+HRstar <- (Lstar1/Lstar0)                                                             
+logHRstar <- log(HRstar)                                                              
+return(logHRstar*fstar0)
+}
+
+# Integral in the numerator
+integral<-integrate(inside_integral,lower=0,upper=1,subdivisions=1000,stop.on.error = FALSE) 
+numerator<-(integral$value)^2
+
+# Denominator
+Sstar0_1<-Sstar(x=1,dist1=T1pdist,dist2=T2pdist,param1=T10param,param2=T20param,dist_biv= distribution0) 
+ST10_1 <- 1-do.call(T1pdist,c(q=1,T10param)) 
+denominator <- ((log(HR1))^2)*(1-Sstar0_1)*(1-ST10_1)
+
+# ARE value
+AREstarT <- (numerator/denominator)
+
+# If the integral is not computed, we assign a missing value
+if(integral$message!="OK") {AREstarT <- NA}
+
+} else
+if(case==2|case==4) {
+
+# Computation of the scale parameter values b10, b20 
+
+if(case==2) {
+# Compute b20
+b20 <- 1/(-log(1-p2))^(1/beta2)
+
+# Compute b10
+Fb10<-function(b10,p1){
+integral<-integrate(function(u) {
+sapply(u, function(u) {
+integrate(function(v) (	(theta*(1-exp(-theta))*exp(-theta*(u+v)))/ (exp(-theta)+  exp(-theta*(u+v)) 
+- exp(-theta*u)-exp(-theta*v))^2 )    , lower=0, upper=   exp((b10*(-log(u))^(1/beta1))^beta2*log(1-p2)) )$value
+})
+}, lower= exp(-1/b10^beta1), upper=1)$value
+return(integral-p1)
+}
+
+limits <- c(0.00001,10000) # The first and the last values must be in opposite signs for the function
+b10 <- uniroot(Fb10, interval=limits,p1=p1)$root  # Find the root (value which equals the function to zero)
+
+}
+
+if(case==4) {
+# We need to create x[1] and x[2] to run 'multiroot' function (library: rootSolve) (NA's initially assigned)
+x<-NA
+y<-NA
+x[1]<-x
+x[2]<-y
+
+# We need to change the name of variables as (b10=x[1],b20=[2]) to execute 'multiroot'
+# Compute b10
+Fb10<-function(b10,b20,p1){
+b10->x[1]
+b20->x[2]
+integral<-integrate(function(u) {
+sapply(u, function(u) {
+integrate(function(v) (	(theta*(1-exp(-theta))*exp(-theta*(u+v)))
+/(exp(-theta)+  exp(-theta*(u+v))  - exp(-theta*u)-exp(-theta*v))^2 )    , lower=0,
+upper=   exp((x[1]*(-log(u))^(1/beta1))^beta2*(  -1/(x[2]^beta2)       )) 	)$value
+})
+}, lower= exp(-1/x[1]^beta1), upper=1)$value
+return(integral-p1)
+}
+
+# Compute b20
+Fb20<-function(b10,b20,p2) {
+b10->x[1]
+b20->x[2]
+integral<-integrate(function(v) {
+sapply(v,function(v) {
+integrate(function(u)((theta*(1-exp(-theta))*exp(-theta*(u+v)))
+/(exp(-theta)+exp(-theta*(u+v))-exp(-theta*u)-exp(-theta*v))^2),lower=0,
+upper=exp(-((((-log(v))^(1/beta2))*x[2])/x[1])^beta1))$value
+})
+},
+lower= exp(-(1/x[2])^beta2), upper=1)$value
+return(integral-p2)
+}
+
+model <- function(x){
+c(Fb10(x[1],x[2],p1), Fb20(x[1],x[2],p2))
+}
+
+(sol <- multiroot(f = model, start = c(1, 1)))
+
+sol<-as.data.frame(sol[1])
+b10<-sol[1,]
+b20<-sol[2,]
+}
+
+
+## Computation of the numerator
+# Note: Only marginal Weibull distributions for fT10, fT20, ST10, ST20.
+
+fT10 <- function(t){
+(beta1/b10) * ( (t/b10)^(beta1-1) ) * (exp(-(t/b10)^beta1))
+}
+
+ST10 <- function(t){
+exp(-(t/b10)^beta1)
+}
+
+fT20 <- function(t){
+(beta2/b20) * ( (t/b20)^(beta2-1) ) * (exp(-(t/b20)^beta2))
+}
+
+ST20 <- function(t){
+exp(-(t/b20)^beta2)
+}
+
+# Sstar0 and fstar0 for any copula
+Sstar0 <- function(t){
+Sstar0<-Sstar(x=t,dist1=T1pdist,dist2=T2pdist,param1=T10param,param2=T20param,dist_biv= distribution0) 
+}
+
+fstar0<- function(t){
+fstar0<-(-grad(Sstar,x=t,dist1=T1pdist,dist2=T2pdist,param1=T10param,param2=T20param,dist_biv= distribution0))
+}
+
+aux21 <- function(t,y){
+theta*exp(-theta*(ST10(t)+y))*(1-exp(-theta))/(exp(-theta)-exp(-theta*ST10(t))-exp(-theta*y)+exp(-theta*(ST10(t)+y)))^2
+}
+
+aux22<-function(u){
+integrate(aux21,0, ST20(u),t=u,subdivisions=10000)$value 
+}
+
+lambdaC10<-function(t){
+aux22(t)*fT10(t)/Sstar0(t)
+}
+
+lambdaC11<-function(t){
+HR1*lambdaC10(t)
+}
+
+aux23<-function(x,t){
+theta*exp(-theta*(x+ST20(t)))*(1-exp(-theta))/(exp(-theta)-exp(-theta*x)-exp(-theta*ST20(t))+exp(-theta*(x+ST20(t))))^2
+}
+
+aux24<-function(u){
+integrate(aux23,0,ST10(u),t=u,subdivisions=10000)$value 
+}
+
+lambdaC20<-function(t){
+aux24(t)*fT20(t)/Sstar0(t)
+}
+
+lambdaC21<-function(t){
+HR2*lambdaC20(t)
+}
+
+# EVALUATION OF LambdaC20 BEFORE COMPUTATION (IT MAY FAIL IN CASES 2/4 FOR BETAS = 0.5 BECAUSE IT IS NOT ALWAYS 
+# EVALUABLE AT T=0)
+LambdaC20_check<-tryCatch(
+LambdaC20<-function(t){
+integrate(lambdaC20,lower=0,upper=t,subdivisions=10000)$value}
+,error = function(e) e)
+
+# WHENEVER LambdaC20 FAILS, WE INCREASE THE LOWER LIMIT OF INTEGRATION
+lower_LambdaC20<-0
+while(inherits(LambdaC20_check, "error")=="TRUE" ) {
+lower_LambdaC20=lower_LambdaC20+0.001
+LambdaC20_check<-tryCatch(
+LambdaC20<-function(t){
+integrate(lambdaC20,lower=0+lower_LambdaC20,upper=t,subdivisions=10000)$value}
+,error = function(e) e)
+}
+
+LambdaC20<-function(t){
+integrate(lambdaC20,lower=0+lower_LambdaC20,upper=t,subdivisions=10000)$value
+}
+
+# Computation of the hazards for both groups
+
+Lstar0<-function(t){
+lambdaC10(t)+lambdaC20(t)
+}
+
+Lstar1<-function(t){
+lambdaC11(t)+lambdaC21(t)
+}
+
+# Computation of HRstar
+
+HRstar <- function(t){
+Lstar1(t)/Lstar0(t)
+}
+
+logHRstar <- function(t){
+log(Lstar1(t)/Lstar0(t))
+}
+
+temp3<- function(t){
+logHRstar(t)*fstar0(t)
+}
+
+# EVALUATION OF temp4 BEFORE COMPUTATION (IT MAY FAIL IN CASES 2/4 FOR BETAS = 0.5 BECAUSE IT IS NOT
+# ALWAYS EVALUABLE AT T=0)
+
+temp4_check<-tryCatch(
+temp4<-integrate(temp3,0,1,subdivisions=10000)$value
+,error = function(e) e)
+
+# WHENEVER temp4 FAILS, WE INCREASE THE LOWER LIMIT OF INTEGRATION
+
+lower_temp4<-0
+while(inherits(temp4_check, "error")=="TRUE" ) {
+lower_temp4=lower_temp4+0.001
+temp4_check<-tryCatch(
+temp4<-integrate(temp3, lower_temp4, 1, subdivisions=10000)$value
+,error = function(e) e)
+}
+
+temp4<-integrate(temp3,0+lower_temp4, 1, subdivisions=10000)$value
+numerator<-(temp4)^2
+
+## Computation of PROBT1UNC
+
+PROBT1UNC_temp_num <- function(t){
+exp(-HR2*LambdaC20(t))*Sstar0(t)*lambdaC10(t)
+}
+
+PROBT1UNC_temp_den <- function(t){
+exp(-LambdaC20(t))*1/2 + exp(-HR2*LambdaC20(t))*1/2
+}
+
+PROBT1UNC_temp <- function(t){
+PROBT1UNC_temp_num(t) / PROBT1UNC_temp_den(t)
+}
+
+PROBT1UNC_int_check<- tryCatch(integrate(PROBT1UNC_temp,lower=0, upper=1,subdivisions=10000)$value, error = function(e) e)
+
+############################################
+############################################
+
+# WE EVALUATE THE FUNCTION PROBT1UNC_int BECAUSE IT MAY FAIL IN CASES 2/4 FOR BETAS = 0.5 PROBABLY DUE 
+# TO THE LOWER LIMITS OF THE INTERGATES lambdaC20 AND temp4.
+# WHEN IT FAILS, WE SEARCH FOR THE MINIMUM EVALUABLE LIMIT OF INTEGARTION FOR lambdaC20 AND temp4; 
+# AND WE SET A LOWER LIMITS OF 0.001 FOR THE REST OF INTEGRATES TO ENSURE CONVERGENCE. 
+
+lower_PROBT1UNC_int<-0
+inc_lower<-0
+
+while(inherits(PROBT1UNC_int_check, "error")=="TRUE" ) {
+lower_PROBT1UNC_int<-0.001
+inc_lower<-inc_lower+0.001
+aux22<-function(u){
+integrate(aux21,0.001, ST20(u),t=u,subdivisions=10000)$value
+}
+lambdaC10<-function(t){
+aux22(t)*fT10(t)/Sstar0(t)
+}
+lambdaC11<-function(t){
+HR1*lambdaC10(t)
+}
+aux23<-function(x,t){
+theta*exp(-theta*(x+ST20(t)))*(1-exp(-theta))/(exp(-theta)-exp(-theta*x)-exp(-theta*ST20(t))+exp(-theta*(x+ST20(t))))^2
+}
+aux24<-function(u){
+integrate(aux23,0.001,ST10(u),t=u,subdivisions=10000)$value
+}
+lambdaC20<-function(t){
+aux24(t)*fT20(t)/Sstar0(t)
+}
+lambdaC21<-function(t){
+HR2*lambdaC20(t)
+}
+LambdaC20<-function(t){
+integrate(lambdaC20,lower=lower_LambdaC20 + inc_lower,upper=t,subdivisions=10000)$value
+}
+Lstar0<-function(t){
+lambdaC10(t)+lambdaC20(t)
+}
+Lstar1<-function(t){
+lambdaC11(t)+lambdaC21(t)
+}
+HRstar <- function(t){
+Lstar1(t)/Lstar0(t)
+}
+logHRstar <- function(t){
+log(Lstar1(t)/Lstar0(t))
+}
+temp3<- function(t){
+logHRstar(t)*fstar0(t)
+}
+
+temp4<-integrate(temp3,lower_temp4 + inc_lower,1,subdivisions=10000)$value
+numerator<-(temp4)^2
+
+PROBT1UNC_temp_num <- function(t){
+exp(-HR2*LambdaC20(t))*Sstar0(t)*lambdaC10(t)
+}
+PROBT1UNC_temp_den <- function(t){
+exp(-LambdaC20(t))*1/2 + exp(-HR2*LambdaC20(t))*1/2
+}
+PROBT1UNC_temp <- function(t){
+PROBT1UNC_temp_num(t) / PROBT1UNC_temp_den(t)
+}
+PROBT1UNC_int_check<- tryCatch(integrate(PROBT1UNC_temp,lower=0.001, upper=1,subdivisions=10000)$value, error = function(e) e)
+} 
+
+PROBT1UNC_int<-integrate(PROBT1UNC_temp,lower=lower_PROBT1UNC_int, upper=1,subdivisions=10000)$value
+
+############################################
+############################################
+
+AREstarT <- numerator / ((log(HR1)^2) * PROBT1UNC_int * (1-Sstar0(1)))
+AREstarT 
+
+}
+
+return(AREstarT)
+}
+
+#######################################################################################
+# Function: CopulaSelection 
+#
+#######################################################################################
+# Description: Constructs a copula class object from the family given and the
+#              the corresponding dependence parameter from the given correlation
+# 
+# copula  Copula given:
+#            Archimedean: "Frank" (default), "Gumbel" or "Clayton"
+#            Elliptical: "Normal" or "T"
+#            Extreme Value: "Galambos", "HuslerReiss", "Gumbel", "Tawn" or "Tev"
+#            Other: "FGM" or "Plackett"
+# rho	  Spearman's coefficient between the 2 marginal distributions
+#######################################################################################
+
+CopulaSelection <- function(copula,rho) {	
+if(copula=="Frank") {
+theta<-iRho(frankCopula(1),rho)
+which.copula <- archmCopula(family = "frank", dim = 2, param = theta)
+return(c(which.copula,theta))
+} else
+if(copula=="Gumbel") {
+theta<-iRho(gumbelCopula(2),rho)
+which.copula <- archmCopula(family = "gumbel", dim = 2, param = theta)
+return(c(which.copula,theta))
+} else 
+if(copula=="Clayton") {
+theta<-iRho(claytonCopula(1),rho)
+which.copula <- archmCopula(family = "clayton", dim = 2, param = theta)
+return(c(which.copula,theta))
+} else
+if(copula=="FGM") {
+theta<-iRho(fgmCopula(1),rho)
+which.copula <- fgmCopula(dim = 2, param = theta)
+return(c(which.copula,theta))
+} else
+if(copula=="Normal") {
+theta<-iRho(normalCopula(0.5),rho)
+which.copula <- normalCopula(dim = 2, param = theta)
+return(c(which.copula,theta))
+} else
+if(copula=="T") {
+theta<-iRho(tCopula(0.5),rho)
+which.copula <- tCopula(dim = 2, param = theta)
+return(c(which.copula,theta))
+} else 
+if(copula=="Galambos") {
+theta<-iRho(galambosCopula(0.5),rho)
+which.copula <- galambosCopula(param = theta)
+return(c(which.copula,theta))
+} else 
+if(copula=="HuslerReiss") {
+theta<-iRho(huslerReissCopula(0.5),rho)
+which.copula <- huslerReissCopula(param = theta)
+return(c(which.copula,theta))
+} else 
+if(copula=="Tawn") {
+theta<-iRho(tawnCopula(0.5),rho)
+which.copula <- tawnCopula(param = theta)
+return(c(which.copula,theta))
+} else
+if(copula=="Tev") {
+theta<-iRho(tevCopula(0.5),rho)
+which.copula <- tevCopula(param = theta)
+return(c(which.copula,theta))
+} else
+if(copula=="Plackett") {
+theta<-iRho(plackettCopula(0.5),rho)
+which.copula <- plackettCopula(param = theta )
+return(c(which.copula,theta))
+} else { stop(paste("Not implemented for",copula,"copula.")) }
+return(c(which.copula,theta))
+}
+
+#######################################################################################
+# Function: MarginalsSelection 
+#
+#######################################################################################
+# Description: Returns the family distribution and parameters of the marginals
+#              (ONLY WEIBULL DISTRIBUTIONS SO FAR) 
+#
+# beta1	  Shape parameter for a Weibull law for the relevant event
+# beta2   Shape parameter for a Weibull law for the additional event 
+# HR1     Hazard Ratio for a Weibull law for the relevant event
+# HR2     Hazard Ratio for a Weibull law for the additional event
+# p1      Proportion of the relevant event expected in group zero
+# p2      Proportion of the additional event expected in group zero
+# case    Censoring case: 1 (default), 2, 3 or 4
+# theta   Dependence parameter for the bivariate distribution in control group
+#######################################################################################
+
+MarginalsSelection<-function(beta1,beta2,HR1,HR2,p1,p2,case,theta) 
+{
+# Scale parameters for group 0 b10,b20
+
+if(case==1) {
+b10 <- 1/((-log(1-p1))^(1/beta1))
+b20 <- 1/((-log(1-p2))^(1/beta2))
+} else
+if (case==2) {  
+Fb10<-function(b10,p1){
+integral<-integrate(function(u) {
+sapply(u, function(u) {
+integrate(function(v) (	(theta*(1-exp(-theta))*exp(-theta*(u+v)))/ (exp(-theta)+  exp(-theta*(u+v))  -
+exp(-theta*u)-exp(-theta*v))^2 )    , lower=0, upper=   exp((b10*(-log(u))^(1/beta1))^beta2*log(1-p2)) 	)$value
+})
+}, lower= exp(-1/b10^beta1), upper=1)$value
+return(integral-p1)
+}
+limits <- c(0.00001,10000) # The first and the last values must be in opposite signs for the function
+b10 <- uniroot(Fb10, interval=limits,p1=p1)$root  # Find the root (value which equals the function zero)
+b20 <- 1/(-log(1-p2))^(1/beta2)
+} else
+if (case==3) {
+b10 <- 1/((-log(1-p1))^(1/(beta1)))
+
+Fb20<-function(b20,p2) {
+integral<-integrate(function(v) {
+sapply(v,function(v) { 
+integrate(function(u)((theta*(1-exp(-theta))*exp(-theta*(u+v)))
+/(exp(-theta)+exp(-theta*(u+v))-exp(-theta*u)-exp(-theta*v))^2),lower=0,
+upper=exp(-((((-log(v))^(1/beta2))*b20)/b10)^beta1))$value
+})
+}, 
+lower= exp(-(1/b20)^beta2), upper=1)$value
+return(integral-p2)
+}
+limits <- c(0.00001,10000) 
+b20 <- uniroot(Fb20, interval=limits,p2=p2)$root
+} else
+if (case==4) {
+
+# We need to create x[1] and x[1] (we assign NA's)
+x<-NA
+y<-NA
+x[1]<-x
+x[2]<-y
+
+# We need to change the name of variables as (b10=x[1],b20=[2]) to execute 'multiroot'
+# Compute b10
+Fb10<-function(b10,b20,p1){
+b10->x[1]
+b20->x[2]
+integral<-integrate(function(u) {
+sapply(u, function(u) {
+integrate(function(v) (	(theta*(1-exp(-theta))*exp(-theta*(u+v)))
+/(exp(-theta)+  exp(-theta*(u+v))  - exp(-theta*u)-exp(-theta*v))^2 )    , lower=0,
+upper=   exp((x[1]*(-log(u))^(1/beta1))^beta2*(  -1/(x[2]^beta2)       )) 	)$value
+})
+}, lower= exp(-1/x[1]^beta1), upper=1)$value
+return(integral-p1)
+}
+
+# Compute b20
+Fb20<-function(b10,b20,p2) {
+b10->x[1]
+b20->x[2]
+integral<-integrate(function(v) {
+sapply(v,function(v) {
+integrate(function(u)((theta*(1-exp(-theta))*exp(-theta*(u+v)))
+/(exp(-theta)+exp(-theta*(u+v))-exp(-theta*u)-exp(-theta*v))^2),lower=0,
+upper=exp(-((((-log(v))^(1/beta2))*x[2])/x[1])^beta1))$value
+})
+},
+lower= exp(-(1/x[2])^beta2), upper=1)$value
+return(integral-p2)
+}
+
+model <- function(x){
+c(Fb10(x[1],x[2],p1), Fb20(x[1],x[2],p2))
+}
+
+(sol <- multiroot(f = model, start = c(1, 1)))
+
+sol<-as.data.frame(sol[1])
+b10<-sol[1,]
+b20<-sol[2,]
+
+}
+
+# Scale parameters for group 1 b11,b21 (Although we do not need to compute the scale parameters for 
+# group 1 (b11, b21) to calculate the ARE)
+b11 <- b10/HR1^(1/beta1)
+b21 <- b20/HR2^(1/beta2)
+
+T1dist<-"weibull"
+T2dist<-"weibull"
+
+T1pdist<-pweibull
+T2pdist<-pweibull
+
+T10param<-list(shape = beta1, scale = b10)
+T20param<-list(shape = beta2, scale = b20)
+
+T11param<-list(shape = beta1, scale = b11)
+T21param<-list(shape = beta2, scale = b21)
+
+return(list(T1dist,T2dist,T1pdist,T2pdist,T10param,T20param,T11param,T21param))	
+}
+
+#######################################################################################
+# Function: Sstar 
+#
+#######################################################################################
+# Description: Returns the value of the survival function of S* at point x given the
+#              marginal distributions and the bivariate distributions via copula 
+#
+# x         Point in which to be evaluated
+# dist1     Distribution function of the marginal T1 (pweibull) 
+# dist2     Distribution function of the marginal T2 (pweibull) 
+# param1    Parameters of the marginal distribution function T1 (pweibull) 
+# param2    Parameters of the marginal distribution function T2 (pweibull) 
+# dist_biv  Distribution function of the bivariate distribution via copula
+#######################################################################################
+
+Sstar<-function(x,dist1,dist2,param1,param2,dist_biv) { 
+y <- if(length(x) == 1) c(x,x) else cbind(x,x)
+return(
+1
+- do.call(dist1,c(list(q=x),param1))
+- do.call(dist2,c(list(q=x),param2))
++ (pMvdc(y, dist_biv))
+)
+}
