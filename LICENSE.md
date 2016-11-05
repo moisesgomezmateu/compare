@@ -2,6 +2,7 @@
  Copyright (C) 2016 Moisés Gómez-Mateu 
 
  Contact: moises.gomez.mateu (at) upc.edu 
+ 
  Department of Statistics and Operations Research, Universitat Politècnica de Catalunya.
  Jordi Girona 1-3. 08034. Barcelona. Spain.
   
