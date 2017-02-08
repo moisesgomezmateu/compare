@@ -1,6 +1,6 @@
 
 ####################################################################################
-# Copyright (C) 2016 Moisés Gómez-Mateu 
+# Copyright (C) 2017 Moisés Gómez-Mateu 
 #
 # Contact: moises.gomez.mateu (at) upc.edu
 # Department of Statistics and Operations Research, Universitat Politècnica de Catalunya.
@@ -40,7 +40,7 @@
 # CASE 4: The composite endpoint does include a fatal event 
 # both in the Relevant endpoint and in the Additional endpoint.
 #
-# Last update: 5/11/2016
+# Last update: 8/02/2017
 #
 # R version: R 3.3.1
 #
