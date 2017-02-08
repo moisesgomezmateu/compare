@@ -2,7 +2,7 @@
 
 Computation of the Asymptotic Relative Efficiency (ARE) of two statistical tests.
 
-Copyright (C) 2016 Moisés Gómez-Mateu 
+Copyright (C) 2017 Moisés Gómez-Mateu 
 
 Contact: moises.gomez.mateu (at) upc.edu 
  
